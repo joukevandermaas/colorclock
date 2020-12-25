@@ -6,6 +6,19 @@ const yellow = { hue: 6790, sat: 254, bri };
 const red = { hue: 65186, sat: 254, bri };
 const green = { hue: 21001, sat: 254, bri };
 
+/*
+todo before ready:
+1. human friendly way to trigger it
+2. allow stopping early, restarting, etc.
+  (allow concurrent use on different lights?)
+3. choose light/scene/room/etc
+4. error handling
+
+new features:
+1. auto repeat timer
+
+*/
+
 module.exports = async (api, timerSeconds) => {
   const hektarId = 1;
 
