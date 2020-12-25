@@ -13,6 +13,7 @@ todo before ready:
   (allow concurrent use on different lights?)
 3. choose light/scene/room/etc
 4. error handling
+5. make the flash more obvious
 
 new features:
 1. auto repeat timer
