@@ -1,21 +1,35 @@
 ﻿@page "/"
-@using Q42.HueApi
 @using System.Threading
+@using Q42.HueApi
 
-<div class="flex items-center justify-center w-screen h-screen">
-    <div class="grid grid-cols-2 gap-2 w-full h-full p-2">
-        @foreach (var (label, _) in _times)
-        {
-            var isSelected = _selectedTime == label;
-            var isAnyRunning = IsRunning;
+@inject HueService Hue;
+@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
 
-            <button
-                class='@(isSelected ? "bg-pink-500 text-white" : (isAnyRunning ? "bg-pink-100 text-pink-300" : "bg-pink-200 text-pink-800")) rounded uppercase text-4xl tracking-wide transition-colors hover:bg-pink-500 hover:text-white focus:outline-none focus:ring focus:ring-inset focus:ring-pink-500'
-                @onclick=@(async (e) => await SelectTimeAsync(label))
-            >
-                @label
-            </button>
-        }
+<div class="flex flex-col items-stretch w-screen h-screen gap-y-2 p-2">
+    @if (_lightIds != null && _lightIds.Length > 0)
+    {
+        <div class="grid grid-cols-2 gap-2 flex-1">
+            @foreach (var (label, _) in _times)
+            {
+                var isSelected = _selectedTime == label;
+                var isAnyRunning = IsRunning;
+
+                <button
+                    class='@(isSelected ? "bg-pink-500 text-white" : (isAnyRunning ? "bg-pink-100 text-pink-300" : "bg-pink-200 text-pink-800")) rounded uppercase text-4xl tracking-wide transition-colors hover:bg-pink-500 hover:text-white focus:outline-none focus:ring focus:ring-inset focus:ring-pink-500'
+                    @onclick=@(async (e) => await SelectTimeAsync(label))
+                >
+                    @label
+                </button>
+            }
+        </div>
+    }
+    <div class="flex items-stretch h-12">
+        <a
+            href="/settings"
+            class="flex-1 flex items-center justify-center rounded border-2 border-gray-300 text-gray-600 hover:bg-gray-300 hover:text-gray-800 focus:outline-none focus:ring focus:ring-gray-300"
+        >
+            settings
+        </a>
     </div>
 </div>
 
@@ -23,6 +37,8 @@
 {
     private (string, TimeSpan)[] _times = new[]
     {
+        ("5s", TimeSpan.FromSeconds(5)),
+        ("10s", TimeSpan.FromSeconds(10)),
         ("30s", TimeSpan.FromSeconds(30)),
         ("2m", TimeSpan.FromMinutes(2)),
         ("10m", TimeSpan.FromMinutes(10)),
@@ -31,12 +47,23 @@
         ("2h", TimeSpan.FromHours(2)),
     };
 
+    private string[] _lightIds;
+
     private string _selectedTime = null;
     private CancellationTokenSource _cancel = null;
 
     private bool IsRunning => _cancel != null;
 
-    private void CancelTimer(MouseEventArgs args) {}
+    protected async override Task OnInitializedAsync()
+    {
+        var selectedLightIds = await LocalStorage.GetItemAsync<string[]>("selectedLights");
+        if (selectedLightIds == null)
+        {
+            selectedLightIds = new string[0];
+        }
+
+        _lightIds = selectedLightIds;
+    }
 
     private async Task SelectTimeAsync(string newTime)
     {
@@ -64,18 +91,16 @@
             return;
         }
 
-        await DoClock(timerDuration, _cancel.Token, "20", "21");
+        await DoClock(timerDuration, _cancel.Token);
         
         _selectedTime = null;
         _cancel = null;
     }
 
-    async Task DoClock(TimeSpan time, CancellationToken cancellationToken, params string[] lightIds)
+    async Task DoClock(TimeSpan time, CancellationToken cancellationToken)
     {
-        var client = new LocalHueClient("192.168.178.10");
-        client.Initialize("t2enGIRzvDs-RPwDwjHvKlTo3cubMbwCfg6sNvND");
-
-        var light = await client.GetLightAsync(lightIds[0]);
+        var client = Hue.Client;
+        var light = await client.GetLightAsync(_lightIds[0]);
         var savedBrightness = light.State.Brightness;
         var savedHue = light.State.Hue;
         var savedSaturation = light.State.Saturation;
@@ -97,25 +122,25 @@
 
         cancellationToken.ThrowIfCancellationRequested();
         command.Hue = green;
-        await client.SendCommandAsync(command, lightIds);
+        await client.SendCommandAsync(command, _lightIds);
 
         await Task.Delay(time / 2);
 
         cancellationToken.ThrowIfCancellationRequested();
         command.Hue = yellow;
-        await client.SendCommandAsync(command, lightIds);
+        await client.SendCommandAsync(command, _lightIds);
 
         await Task.Delay(halfTime - tenPercentTime);
 
         cancellationToken.ThrowIfCancellationRequested();
         command.Hue = red;
-        await client.SendCommandAsync(command, lightIds);
+        await client.SendCommandAsync(command, _lightIds);
 
         await Task.Delay(tenPercentTime);
 
         cancellationToken.ThrowIfCancellationRequested();
         command.Alert = Alert.Multiple;
-        await client.SendCommandAsync(command, lightIds);
+        await client.SendCommandAsync(command, _lightIds);
         
         // restore to normal when flashing is done
         await Task.Delay(TimeSpan.FromSeconds(10));
@@ -124,7 +149,7 @@
         command.Hue = savedHue;
         command.Saturation = savedSaturation;
         command.Alert = Alert.None;
-        await client.SendCommandAsync(command, lightIds);
+        await client.SendCommandAsync(command, _lightIds);
     }
 
 }

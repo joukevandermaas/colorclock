@@ -1,0 +1,83 @@
+@page "/settings"
+@using System.Linq
+
+@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
+@inject HueService Hue
+
+<div class="p-4">
+  <div class="h-8 flex justify-end">
+    <a
+      class="text-gray-300 w-8 h-8 block"
+      href="/"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </a>
+  </div>
+  <p class="px-3 mt-3 italic text-gray-800">Select the lights to use for the timer.</p>
+  @if (_lights != null)
+  {
+    <ul class="mt-2 p-2 space-y-6">
+      @foreach (var light in _lights)
+      {
+        <li>
+          <label class="flex flex-row items-center uppercase tracking-wide text-pink-700">
+            <input
+              type="checkbox"
+              class="w-8 h-8 rounded text-pink-500 focus:ring-pink-500"
+              checked=@(light.Selected)
+              @onchange=@(async (e) => await OnLightCheckedAsync(e, light))
+            />
+            <span class="ml-2 text-xl">@light.Name</span>
+          </label>
+        </li>
+      }
+    </ul>
+  }
+  else
+  {
+      <p class="p-3">Loading lights...</p>
+  }
+</div>
+
+@code
+{
+    private LightState[] _lights;
+
+    protected async override Task OnInitializedAsync()
+    {
+        var selectedLightIds = await LocalStorage.GetItemAsync<string[]>("selectedLights");
+        if (selectedLightIds == null)
+        {
+            selectedLightIds = new string[0];
+        }
+
+        _lights = (await Hue.Client.GetLightsAsync())
+            .Where(l => l.Type == "Extended color light") // full color only
+            .Select(l => new LightState
+            {
+                Id = l.Id, 
+                Name = l.Name,
+                Selected = selectedLightIds.Contains(l.Id)
+            })
+            .ToArray();
+    }
+    
+    private async Task OnLightCheckedAsync(ChangeEventArgs args, LightState light)
+    {
+        light.Selected = (bool) args.Value;
+
+        var selectedLights = _lights.Where(l => l.Selected).Select(l => l.Id);
+
+        await LocalStorage.SetItemAsync("selectedLights", selectedLights);
+    }
+
+    class LightState
+    {
+        public string Id { get; init; }
+        public string Name { get; init; }
+
+        public bool Selected { get; set; } = false;
+    }
+}
