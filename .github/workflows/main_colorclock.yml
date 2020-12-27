@@ -13,18 +13,21 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@main
 
     - name: Set up .NET Core
       uses: actions/setup-dotnet@v1
       with:
         dotnet-version: '5.0.x'
 
+    - name: Go to directory
+      run: dir cs/ColorClock
+
     - name: Build with dotnet
       run: dotnet build --configuration Release
 
     - name: dotnet publish
-      run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/myapp
+      run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/ColorClock
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
@@ -32,4 +35,4 @@ jobs:
         app-name: 'colorclock'
         slot-name: 'production'
         publish-profile: ${{ secrets.AzureAppService_PublishProfile_3c5c5b87591049548900843a1303cd94 }}
-        package: ${{env.DOTNET_ROOT}}/myapp 
+        package: ${{env.DOTNET_ROOT}}/ColorClock 
