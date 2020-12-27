@@ -8,7 +8,7 @@ const string deskLight2 = "21";
 var client = new LocalHueClient("192.168.178.10");
 client.Initialize("t2enGIRzvDs-RPwDwjHvKlTo3cubMbwCfg6sNvND");
 
-await DoClock(TimeSpan.FromSeconds(10), deskLight1, deskLight2);
+await DoClock(TimeSpan.FromSeconds(60), deskLight1, deskLight2);
 
 async Task DoClock(TimeSpan time, params string[] lightIds)
 {
@@ -17,15 +17,19 @@ async Task DoClock(TimeSpan time, params string[] lightIds)
     var savedHue = light.State.Hue;
     var savedSaturation = light.State.Saturation;
 
-    var red = 65186;
-    var yellow = 6790;
-    var green = 21001;
+    const ushort red = 65186;
+    const ushort yellow = 6790;
+    const ushort green = 21001;
+
+    var halfTime = time / 2;
+    var tenPercentTime = time / 10;
 
     var command = new LightCommand()
     {
         On = true,
         Brightness = savedBrightness,
         Saturation = 0xff,
+        TransitionTime = TimeSpan.FromSeconds(1)
     };
 
     command.Hue = green;
@@ -36,12 +40,12 @@ async Task DoClock(TimeSpan time, params string[] lightIds)
     command.Hue = yellow;
     await client.SendCommandAsync(command, lightIds);
 
-    await Task.Delay((time / 2) - (time / 10));
+    await Task.Delay(halfTime - tenPercentTime);
 
     command.Hue = red;
     await client.SendCommandAsync(command, lightIds);
 
-    await Task.Delay(time / 10);
+    await Task.Delay(tenPercentTime);
 
     command.Alert = Alert.Multiple;
     await client.SendCommandAsync(command, lightIds);
