@@ -11,6 +11,8 @@ on:
 jobs:
   build-and-deploy:
     runs-on: windows-latest
+    env:
+      PROJECT_ROOT: ./cs/ColorClock
 
     steps:
     - uses: actions/checkout@main
@@ -20,14 +22,13 @@ jobs:
       with:
         dotnet-version: '5.0.x'
 
-    - name: Go to directory
-      run: dir cs/ColorClock
-
     - name: Build with dotnet
       run: dotnet build --configuration Release
+      working-directory: ${{env.PROJECT_ROOT}}
 
     - name: dotnet publish
       run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/ColorClock
+      working-directory: ${{env.PROJECT_ROOT}}
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
