@@ -1,30 +1,28 @@
 ﻿@page "/"
-@using System.Threading
-@using Q42.HueApi
+@using Blazored.LocalStorage;
 
-@inject HueService Hue;
-@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
+@inject HueService Hue
+@inject ILocalStorageService LocalStorage
+@inject IJSRuntime JSRuntime
+
+@implements IAsyncDisposable
 
 <div class="flex flex-col items-stretch w-screen h-screen gap-y-2 p-2">
-    @if (_lightIds != null && _lightIds.Length > 0)
+    @if (Hue.HasLightsConfigured)
     {
         <div class="grid grid-cols-2 gap-2 flex-1">
             @foreach (var (label, _) in _times)
             {
-                <button
-                    class='@(_selectedTime == label ? "bg-pink-500 text-white" : (IsRunning ? "bg-pink-100 text-pink-300" : "bg-pink-200 text-pink-800")) rounded uppercase text-4xl tracking-wide transition-colors hover:bg-pink-500 hover:text-white focus:outline-none focus:ring focus:ring-inset focus:ring-pink-500'
-                    @onclick=@(async (e) => await SelectTimeAsync(label))
-                >
+                <button class='@(_selectedTime == label ? "bg-pink-500 text-white" : (_selectedTime != null ? "bg-pink-100 text-pink-300" : "bg-pink-200 text-pink-800")) rounded uppercase text-4xl tracking-wide transition-colors hover:bg-pink-500 hover:text-white focus:outline-none focus:ring focus:ring-inset focus:ring-pink-500'
+                        @onclick=@(async (e) => await SelectTimeAsync(label))>
                     @label
                 </button>
             }
         </div>
     }
     <div class="flex items-stretch h-12">
-        <a
-            href="/settings"
-            class="flex-1 flex items-center justify-center rounded border-2 border-gray-300 text-gray-600 hover:bg-gray-300 hover:text-gray-800 focus:outline-none focus:ring focus:ring-gray-300"
-        >
+        <a href="/settings"
+           class="flex-1 flex items-center justify-center rounded border-2 border-gray-300 text-gray-600 hover:bg-gray-300 hover:text-gray-800 focus:outline-none focus:ring focus:ring-gray-300">
             settings
         </a>
     </div>
@@ -32,51 +30,78 @@
 
 @code
 {
+    // this should probably be a dictionary eventually
+    // but since there are so few items (< 10) it doesn't
+    // matter that much for now.
     private (string, TimeSpan)[] _times = new[]
     {
         ("5s", TimeSpan.FromSeconds(5)),
         ("10s", TimeSpan.FromSeconds(10)),
         ("30s", TimeSpan.FromSeconds(30)),
-        ("2m", TimeSpan.FromMinutes(2)),
+        ("5m", TimeSpan.FromMinutes(5)),
         ("10m", TimeSpan.FromMinutes(10)),
         ("30m", TimeSpan.FromMinutes(30)),
         ("1h", TimeSpan.FromHours(1)),
         ("2h", TimeSpan.FromHours(2)),
     };
 
-    private string[] _lightIds;
-
     private string _selectedTime = null;
-    private CancellationTokenSource _cancel = null;
+    private object _interval = null;
+    private bool _justStarted = false;
 
-    private bool IsRunning => _cancel != null;
-
-    protected async override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        var selectedLightIds = await LocalStorage.GetItemAsync<string[]>("selectedLights");
-        if (selectedLightIds == null)
+        await base.OnInitializedAsync();
+
+        var obj = DotNetObjectReference.Create(this);
+        _interval = await JSRuntime.InvokeAsync<object>("createInterval", new object[] { obj, nameof(OnIntervalTickAsync), 1000 });
+
+        await OnIntervalTickAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await JSRuntime.InvokeVoidAsync("clearInterval", _interval);
+    }
+
+    [JSInvokable]
+    public async Task OnIntervalTickAsync()
+    {
+        // this runs every second, we check if there's a timer running
+        // and if so, we highlight the correct button.
+
+        var oldTimer = _selectedTime;
+        var newTimer = await Hue.GetRunningTimerAsync();
+
+        // see below, this is a work-around to prevent the ui
+        // from flashing
+        if (_justStarted && newTimer == null)
         {
-            selectedLightIds = new string[0];
+            return;
         }
 
-        _lightIds = selectedLightIds;
+        if (oldTimer != newTimer)
+        {
+            _selectedTime = newTimer;
+            StateHasChanged();
+        }
     }
 
     private async Task SelectTimeAsync(string newTime)
     {
         _selectedTime = newTime;
 
-        if (IsRunning)
-        {
-            _cancel.Cancel();
-        }
+        // we need to set this because the update function may
+        // be called before the schedule has been registered in the
+        // hub, and that would make the ui flash.
+        _justStarted = true;
 
-        _cancel = new CancellationTokenSource();
+        // this is not super efficient but we only have < 10 timers
+        // so it's fast enough for now :)
         TimeSpan timerDuration = default;
-
         foreach (var (label, time) in _times)
         {
-            if (_selectedTime == label)
+            if (newTime == label)
             {
                 timerDuration = time;
                 break;
@@ -88,65 +113,11 @@
             return;
         }
 
-        await DoClock(timerDuration, _cancel.Token);
-        
-        _selectedTime = null;
-        _cancel = null;
-    }
+        await Hue.StartTimerAsync(_selectedTime, timerDuration);
 
-    async Task DoClock(TimeSpan time, CancellationToken cancellationToken)
-    {
-        var client = Hue.Client;
-        var light = await client.GetLightAsync(_lightIds[0]);
-        var savedBrightness = light.State.Brightness;
-        var savedHue = light.State.Hue;
-        var savedSaturation = light.State.Saturation;
-
-        const ushort red = 65186;
-        const ushort yellow = 6790;
-        const ushort green = 21001;
-
-        var halfTime = time / 2;
-        var tenPercentTime = time / 10;
-
-        var command = new LightCommand()
-        {
-            On = true,
-            Brightness = savedBrightness,
-            Saturation = 0xff,
-            TransitionTime = TimeSpan.FromSeconds(1)
-        };
-
-        cancellationToken.ThrowIfCancellationRequested();
-        command.Hue = green;
-        await client.SendCommandAsync(command, _lightIds);
-
-        await Task.Delay(time / 2);
-
-        cancellationToken.ThrowIfCancellationRequested();
-        command.Hue = yellow;
-        await client.SendCommandAsync(command, _lightIds);
-
-        await Task.Delay(halfTime - tenPercentTime);
-
-        cancellationToken.ThrowIfCancellationRequested();
-        command.Hue = red;
-        await client.SendCommandAsync(command, _lightIds);
-
-        await Task.Delay(tenPercentTime);
-
-        cancellationToken.ThrowIfCancellationRequested();
-        command.Alert = Alert.Multiple;
-        await client.SendCommandAsync(command, _lightIds);
-        
-        // restore to normal when flashing is done
-        await Task.Delay(TimeSpan.FromSeconds(10));
-
-        cancellationToken.ThrowIfCancellationRequested();
-        command.Hue = savedHue;
-        command.Saturation = savedSaturation;
-        command.Alert = Alert.None;
-        await client.SendCommandAsync(command, _lightIds);
+        // at this point we know that the schedules are there on the
+        // hub, so we no longer need to force the selected state
+        _justStarted = false;
     }
 
 }

@@ -68,9 +68,11 @@
     {
         light.Selected = (bool) args.Value;
 
-        var selectedLights = _lights.Where(l => l.Selected).Select(l => l.Id);
+        var selectedLights = _lights.Where(l => l.Selected).Select(l => l.Id).ToArray();
 
         await LocalStorage.SetItemAsync("selectedLights", selectedLights);
+
+        await Hue.CreateScenesAsync(selectedLights);
     }
 
     class LightState

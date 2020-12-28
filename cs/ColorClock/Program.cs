@@ -15,11 +15,17 @@ namespace ColorClock
             var builder = WebAssemblyHostBuilder.CreateDefault(args);
             builder.RootComponents.Add<App>("app");
 
-            builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
-            builder.Services.AddScoped<HueService>();
             builder.Services.AddBlazoredLocalStorage();
 
-            await builder.Build().RunAsync();
+            builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+            builder.Services.AddScoped<HueService>();
+
+            var host = builder.Build();
+
+            var hueService = host.Services.GetService<HueService>();
+            await hueService.InitializeAsync();
+
+            await host.RunAsync();
         }
     }
 }
