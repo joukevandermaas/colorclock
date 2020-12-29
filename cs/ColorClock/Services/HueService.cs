@@ -98,13 +98,13 @@ namespace ColorClock.Services
             ConfigureColor(redScene, lightIds, red);
             ConfigureColor(yellowScene, lightIds, yellow);
             ConfigureColor(greenScene, lightIds, green);
-            ConfigureState(alertScene, lightIds, new State { Alert = Alert.Multiple });
+            ConfigureColor(alertScene, lightIds, red, brightness: 0x00);
 
             await Task.WhenAll(
                 SaveSceneAsync(redScene),
                 SaveSceneAsync(yellowScene),
-                SaveSceneAsync(greenScene)
-                // SaveSceneAsync(alertScene)
+                SaveSceneAsync(greenScene),
+                SaveSceneAsync(alertScene)
             );
 
             HasLightsConfigured = true;
@@ -135,22 +135,18 @@ namespace ColorClock.Services
                 Recycle = true,
             };
 
-        private static void ConfigureState(Scene scene, string[] lights, State state)
+        private static void ConfigureColor(Scene scene, string[] lights, ushort color, byte brightness = 0xff)
         {
-            state.On = true;
+            var state = new State
+            {
+                On = true,
+                Hue = color,
+                Saturation = 0xff,
+                Brightness = brightness,
+            };
 
             scene.Lights = lights;
             scene.LightStates = lights.ToDictionary(l => l, l => state);
-        }
-
-        private static void ConfigureColor(Scene scene, string[] lights, ushort color)
-        {
-            ConfigureState(scene, lights, new State
-            {
-                Hue = color,
-                Saturation = 0xff,
-                Brightness = 0xff,
-            });
         }
 
         public async Task<string> GetRunningTimerAsync()
@@ -186,6 +182,7 @@ namespace ColorClock.Services
 
             var halftime = duration / 2;
             var tenpercent = duration / 10;
+            var flashPeriod = TimeSpan.FromSeconds(1);
 
             var scenes = (await Client.GetScenesAsync())
                 .Where(scene => scene.Name.Contains(DeviceId));
@@ -200,7 +197,14 @@ namespace ColorClock.Services
             await Task.WhenAll(
                 Client.RecallSceneAsync(greenScene.Id),
                 CreateScheduleAsync(context, "halftime", halftime, yellowScene.Id),
-                CreateScheduleAsync(context, "tenpercent", duration - tenpercent, redScene.Id)
+                CreateScheduleAsync(context, "tenpercent", duration - tenpercent, redScene.Id),
+                // flash the light on and off
+                CreateScheduleAsync(context, "finish", duration, alertScene.Id),
+                CreateScheduleAsync(context, "finish2", duration + flashPeriod, redScene.Id),
+                CreateScheduleAsync(context, "finish3", duration + (flashPeriod * 2), alertScene.Id),
+                CreateScheduleAsync(context, "finish4", duration + (flashPeriod * 3), redScene.Id),
+                CreateScheduleAsync(context, "finish5", duration + (flashPeriod * 4), alertScene.Id),
+                CreateScheduleAsync(context, "finish6", duration + (flashPeriod * 5), redScene.Id)
             );
         }
 
